@@ -220,6 +220,52 @@ class AzureSpeechAssessment {
     _channel.invokeMethod('speakStop');
   }
 
+  /// Synthesize speech
+  static initSpeakTextPlus() {
+    if ((_subKey != null && _region != null)) {
+      _channel.invokeMethod('initSpeakTextPlus', {
+        'language': _lang,
+        'voiceName': _voiceName,
+        'subscriptionKey': _subKey,
+        'region': _region
+      });
+    } else {
+      throw "Error: SpeechRecognitionParameters not initialized correctly";
+    }
+  }
+
+  /// Synthesize speech
+  static speakSSMLPlus(String ssml) {
+    if ((_subKey != null && _region != null)) {
+      _channel.invokeMethod('speakSSMLPlus', {
+        'ssml': ssml,
+      });
+    } else {
+      throw "Error: SpeechRecognitionParameters not initialized correctly";
+    }
+  }
+
+  /// Synthesize speech
+  static speakTextPlus(String text) {
+    if ((_subKey != null && _region != null)) {
+      _channel.invokeMethod('speakTextPlus', {
+        'text': text,
+      });
+    } else {
+      throw "Error: SpeechRecognitionParameters not initialized correctly";
+    }
+  }
+
+  /// Synthesize speech stop
+  static speakTextPlusPause() {
+    _channel.invokeMethod('speakTextPlusPause');
+  }
+
+  /// Synthesize speech stop
+  static speakTextPlusStop() {
+    _channel.invokeMethod('speakTextPlusStop');
+  }
+
   /// Speech recognition that doesnt stop recording text until you stopped it by calling again this function
   /// Return the text obtained or the error catched
 

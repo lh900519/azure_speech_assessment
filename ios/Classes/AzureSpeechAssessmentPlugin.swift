@@ -8,6 +8,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     var continuousListeningStarted: Bool = false
     private var speechRecognizer: SPXSpeechRecognizer?
     private var speakSynthesizer: SPXSpeechSynthesizer?
+    private var speakSynthesizerPlus: SPXSpeechSynthesizer?
+    private let audioSession = AVAudioSession.sharedInstance()
     
     var text = ""
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -26,14 +28,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let serviceRegion = args?["region"] ?? ""
             let lang = args?["language"] ?? ""
             let timeoutMs = args?["timeout"] ?? ""
-            print("Called simpleVoice \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs)")
+            // print("Called simpleVoice \(lang) \(timeoutMs)")
             simpleSpeechRecognition(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs)
         } else if(call.method == "micStream"){
             let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
             let serviceRegion = args?["region"] ?? ""
             let lang = args?["language"] ?? ""
             let timeoutMs = args?["timeout"] ?? ""
-            print("Called simpleVoice \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs)")
+            // print("Called simpleVoice \(lang) \(timeoutMs)")
             DispatchQueue.global(qos: .userInteractive).async {
                 self.micStreamSpeechRecognition(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs)
             }
@@ -42,7 +44,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let serviceRegion = args?["region"] ?? ""
             let lang = args?["language"] ?? ""
             let timeoutMs = args?["timeout"] ?? ""
-            print("Called simpleVoicePlus \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs)")
+            // print("Called simpleVoicePlus \(lang) \(timeoutMs)")
             simpleSpeechRecognitionPlus(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs)
         } else if (call.method == "soundRecord") {
             let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
@@ -50,7 +52,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let lang = args?["language"] ?? ""
             let timeoutMs = args?["timeout"] ?? ""
             let path = args?["path"] ?? ""
-            print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path)")
+            // print("Called soundRecord \(lang) \(timeoutMs) \(path)")
             soundRecord(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path)
         } else if (call.method == "speakText") {
             let text = args?["text"] ?? ""
@@ -59,13 +61,29 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let lang = args?["language"] ?? ""
             let voiceName = args?["voiceName"] ?? ""
             
-            print("Called speakText \(speechSubscriptionKey) \(serviceRegion) \(lang)")
-            
             speakText(text: text,speechSubscriptionKey: speechSubscriptionKey,serviceRegion: serviceRegion, lang: lang, voiceName: voiceName);
         } else if(call.method == "speakStop"){
-            print("Called speakStop")
+            // print("Called speakStop")
             speakStop();
+        } else if (call.method == "initSpeakTextPlus") {
+            let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
+            let serviceRegion = args?["region"] ?? ""
+            let lang = args?["language"] ?? ""
+            let voiceName = args?["voiceName"] ?? ""
+            
+            initSpeakTextPlus(speechSubscriptionKey: speechSubscriptionKey,serviceRegion: serviceRegion, lang: lang, voiceName: voiceName);
+        } else if (call.method == "speakTextPlus") {
+            let text = args?["text"] ?? ""
+            speakTextPlus(text: text);
+        } else if (call.method == "speakSSMLPlus") {
+            let ssml = args?["ssml"] ?? ""
+            speakSSMLPlus(ssml: ssml);
+        } else if (call.method == "speakTextPlusStop") {
+            speakTextPlusStop();
+        } else if (call.method == "speakTextPlusPause") {
+            speakTextPlusPause();
         }
+        
         else {
             result(FlutterMethodNotImplemented)
         }
@@ -127,42 +145,123 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                 print("error \(error) happened")
                 speechConfig = nil
             }
-            // let audioConfig = SPXAudioConfiguration()
-            speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: nil)
+            let audioConfig = SPXAudioConfiguration()
+            speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
         }
-        
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
-            print("####################### speech AudioCategory \(audioSession.category)")
-            print("####################### speech AudioCategoryOptions \(audioSession.categoryOptions)")
-            try audioSession.setMode(AVAudioSession.Mode.default)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
+            try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("audioSession error \(error) happened")
         }
         
         DispatchQueue.global().async{
-            self.stopAudio()
             self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
-            let speechResult = try! self.speakSynthesizer?.startSpeakingText(text)
-            if (speechResult != nil) {
-
-                self.speechStream = try! SPXAudioDataStream(from: speechResult!)
-//                var data = NSMutableData(capacity: 16000)
-//                while (stream.read(data!, length: 16000) > 0) {
-//                    print("speechResult data \(data)")
-//                }
-
-                self.startAudio()
+            let speechResult = try! self.speakSynthesizer?.speakText(text)
+            self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
+        }
+    }
+    
+    // 初始化文字转语音
+    public func initSpeakTextPlus(speechSubscriptionKey : String, serviceRegion : String, lang: String, voiceName: String) {
+        if (speakSynthesizerPlus == nil) {
+            var speechConfig: SPXSpeechConfiguration?
+            do {
+                try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
+                speechConfig!.speechSynthesisLanguage = lang
+                speechConfig!.speechSynthesisVoiceName = voiceName
+                
+                // 设置音频格式
+                speechConfig!.setSpeechSynthesisOutputFormat(.raw16Khz16BitMonoPcm)
+            } catch {
+                print("error \(error) happened")
+                speechConfig = nil
             }
             
-//            let speechResult = try! self.speakSynthesizer?.speakText(text)
-//            print("####################### speechResult first byte latency \(String(describing: speechResult?.properties?.getPropertyBy(.speechServiceResponseSynthesisFirstByteLatencyMs)))")
-//            print("####################### speechResult finish latency  \(String(describing: speechResult?.properties?.getPropertyBy(.speechServiceResponseSynthesisFinishLatencyMs)))")
-//            self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
+            speakSynthesizerPlus = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: nil)
         }
         
+        do {
+            print("####################### speech AudioCategory \(self.audioSession.category)")
+            print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
+            try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
+            print("####################### speech AudioCategory \(self.audioSession.category)")
+            print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
+            // try audioSession.setMode(AVAudioSession.Mode.default)
+            try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("audioSession error \(error) happened")
+        }
+        
+        DispatchQueue.global().async{
+            self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
+            self.startAudio()
+        }
+    }
+    
+    
+    var speakPlusPlaying: Bool = false
+    public func speakTextPlus(text:String) {
+        if (speakSynthesizerPlus == nil) {
+            print("speakSynthesizerPlus error no init")
+            return
+        }
+        
+        speakPlusPlaying = true
+        print("AzureSpeech speakTextPlus \(text)")
+        
+        DispatchQueue.global().async{
+            
+            self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
+            let speechResult = try! self.speakSynthesizerPlus?.startSpeakingText(text)
+            if (speechResult != nil) {
+                self.speechStream = try! SPXAudioDataStream(from: speechResult!)
+            }
+        }
+    }
+    
+    public func speakSSMLPlus(ssml:String) {
+        if (speakSynthesizerPlus == nil) {
+            print("speakSynthesizerPlus error no init")
+            return
+        }
+        
+        speakPlusPlaying = true
+        print("AzureSpeech speakTextPlus \(text)")
+        
+        DispatchQueue.global().async{
+            
+            self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
+            let speechResult = try! self.speakSynthesizerPlus?.startSpeakingSsml(ssml)
+            if (speechResult != nil) {
+                self.speechStream = try! SPXAudioDataStream(from: speechResult!)
+            }
+        }
+    }
+    
+    
+    public func speakTextPlusPause() {
+        try! speakSynthesizerPlus?.stopSpeaking()
+        print("AzureSpeech Plus Pause 1 \(String(describing: remoteIOUnit))")
+        speechStream = nil
+    }
+    public func speakTextPlusStop() {
+        try! speakSynthesizerPlus?.stopSpeaking()
+        print("AzureSpeech Plus STOP 1 \(String(describing: remoteIOUnit))")
+        if (remoteIOUnit != nil) {
+            print("AzureSpeech Plus STOP 2 \(String(describing: remoteIOUnit))")
+            AudioOutputUnitStop(remoteIOUnit!);
+            print("AzureSpeech Plus STOP 3 \(String(describing: remoteIOUnit))")
+        }
+    }
+    
+    private func speakTextPlusPlayEnd() {
+        if (!speakPlusPlaying) {
+            return
+        }
+        speakPlusPlaying = false
+        print("AzureSpeech play End 1")
+        self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
     }
     
     var speechStream: SPXAudioDataStream? = nil
@@ -170,18 +269,16 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     private func stopAudio() {
         if (!speeching) {return}
         speeching = false
-        do {
-            print("stopAudio STOP 1 \(String(describing: remoteIOUnit))")
-            if (remoteIOUnit != nil) {
-                print("stopAudio STOP 2 \(String(describing: remoteIOUnit))")
-                AudioOutputUnitStop(remoteIOUnit!);
-                // AudioComponentInstanceDispose(remoteIOUnit!);
-                print("stopAudio STOP 3 \(String(describing: remoteIOUnit))")
-            }
-            self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
-        } catch {
-            print("stopAudio STOP error")
+       
+        print("AzureSpeech STOP 1 \(String(describing: remoteIOUnit))")
+        if (remoteIOUnit != nil) {
+            print("AzureSpeech STOP 2 \(String(describing: remoteIOUnit))")
+            AudioOutputUnitStop(remoteIOUnit!);
+            // AudioComponentInstanceDispose(remoteIOUnit!);
+            print("AzureSpeech STOP 3 \(String(describing: remoteIOUnit))")
         }
+        
+        self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
     }
     
     //需要实例化的AudioUnit
@@ -196,11 +293,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         var status = noErr
         let this = unsafeBitCast(inRefCon, to: AzureSpeechAssessmentPlugin.self)
         
-        if (!this.speeching) {return status}
+        if (!this.speeching) {
+            return status
+        }
+        
+        guard let length = ioData?.pointee.mBuffers.mDataByteSize else { return noErr }
         
         if (this.speechStream != nil) {
             let bufferData: AudioBuffer = ioData!.pointee.mBuffers
-            guard let length = ioData?.pointee.mBuffers.mDataByteSize else { return noErr }
             guard let buffer = ioData?.pointee.mBuffers.mData else { return noErr }
            
             var data = NSMutableData(capacity: Int(length))
@@ -209,9 +309,12 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                 
                 ioData?.pointee.mBuffers.mData = data!.mutableBytes
             } else {
-                print("speechResult stop")
-                this.stopAudio()
+                // print("AzureSpeech play end")
+                this.speakTextPlusPlayEnd()
+                memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
             }
+        } else {
+            memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
         }
         
         return status
@@ -245,17 +348,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             print("speechResult ####################### 实例化AudioUnit错误")
             return
         }
-//        var disableFlag: UInt32 = 0
-//        var enableFlag: UInt32 = 1;
-//
-//        //开启扬声器
-//        AudioUnitSetProperty(remoteIOUnit!,
-//                     kAudioOutputUnitProperty_EnableIO,
-//                     kAudioUnitScope_Output,
-//                     0,
-//                     &enableFlag,
-//                     UInt32(MemoryLayout<UInt32>.size))
-        
+
         // 设置AudioUnit基本参数
         var mAudioFormat = AudioStreamBasicDescription()
         mAudioFormat.mSampleRate = 16000;
@@ -315,8 +408,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             return
         }
     }
-    
-    
     
     public func micStreamSpeechRecognition(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String) {
         if continuousListeningStarted == true {
@@ -440,7 +531,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
         
     }
-    
     
     public func soundRecord(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String) {
         var speechConfig: SPXSpeechConfiguration?
