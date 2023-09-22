@@ -182,11 +182,11 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         }
         
         do {
-            print("####################### speech AudioCategory \(self.audioSession.category)")
-            print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
+            // print("####################### speech AudioCategory \(self.audioSession.category)")
+            // print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
             try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
-            print("####################### speech AudioCategory \(self.audioSession.category)")
-            print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
+            // print("####################### speech AudioCategory \(self.audioSession.category)")
+            // print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
             // try audioSession.setMode(AVAudioSession.Mode.default)
             try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
@@ -200,7 +200,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     }
     
     
-    var speakPlusPlaying: Bool = false
+    var speakPlusPlaying: Bool = true
     public func speakTextPlus(text:String) {
         if (speakSynthesizerPlus == nil) {
             print("speakSynthesizerPlus error no init")
@@ -296,22 +296,24 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         if (!this.speeching) {
             return status
         }
+        if (!this.speakPlusPlaying) {
+            return status
+        }
         
         guard let length = ioData?.pointee.mBuffers.mDataByteSize else { return noErr }
         
         if (this.speechStream != nil) {
             let bufferData: AudioBuffer = ioData!.pointee.mBuffers
-            guard let buffer = ioData?.pointee.mBuffers.mData else { return noErr }
+            // guard let buffer = ioData?.pointee.mBuffers.mData else { return noErr }
            
             var data = NSMutableData(capacity: Int(length))
             if this.speechStream!.read(data!, length: UInt(length)) > 0 {
-                memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
-                
-                ioData?.pointee.mBuffers.mData = data!.mutableBytes
+                // memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
+                // ioData?.pointee.mBuffers.mData = data!.mutableBytes
+                memcpy(ioData?.pointee.mBuffers.mData, data!.mutableBytes, Int(length))
             } else {
-                // print("AzureSpeech play end")
-                this.speakTextPlusPlayEnd()
                 memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
+                this.speakTextPlusPlayEnd()
             }
         } else {
             memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
@@ -591,8 +593,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             azureChannel.invokeMethod("speech.onFinalResponse", arguments: result.text)
             azureChannel.invokeMethod("speech.onFinalAssessment", arguments: pronunciationAssessmentResultJson)
         }
-        
-        
         
     }    
 }
