@@ -162,6 +162,9 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         }
     }
     
+    private var rememberedAudioCategory: AVAudioSession.Category?
+    private var rememberedAudioCategoryOptions: AVAudioSession.CategoryOptions?
+    
     // 初始化文字转语音
     public func initSpeakTextPlus(speechSubscriptionKey : String, serviceRegion : String, lang: String, voiceName: String) {
         if (speakSynthesizerPlus == nil) {
@@ -184,6 +187,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         do {
             // print("####################### speech AudioCategory \(self.audioSession.category)")
             // print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
+            rememberedAudioCategory = self.audioSession.category
+            rememberedAudioCategoryOptions = self.audioSession.categoryOptions
             try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
             // print("####################### speech AudioCategory \(self.audioSession.category)")
             // print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
@@ -252,6 +257,15 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             print("AzureSpeech Plus STOP 2 \(String(describing: remoteIOUnit))")
             AudioOutputUnitStop(remoteIOUnit!);
             print("AzureSpeech Plus STOP 3 \(String(describing: remoteIOUnit))")
+            do {
+//                if let rememberedAudioCategory = rememberedAudioCategory, let rememberedAudioCategoryOptions = rememberedAudioCategoryOptions {
+//                    try self.audioSession.setCategory(rememberedAudioCategory,options: rememberedAudioCategoryOptions)
+//                }
+                try self.audioSession.setCategory(.playback,options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
+            }
+            catch {
+                
+            }
         }
     }
     
