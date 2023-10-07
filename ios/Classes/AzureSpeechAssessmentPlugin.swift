@@ -127,7 +127,9 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
     }
     public func speakStop() {
-        try! speakSynthesizer?.stopSpeaking()
+        DispatchQueue.global().async{
+            try! self.speakSynthesizer?.stopSpeaking()
+        }
     }
     
     public func speakText(text:String, speechSubscriptionKey : String, serviceRegion : String, lang: String, voiceName: String) {
@@ -246,12 +248,16 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     
     
     public func speakTextPlusPause() {
-        try! speakSynthesizerPlus?.stopSpeaking()
+        DispatchQueue.global().async{
+            try! self.speakSynthesizer?.stopSpeaking()
+        }
         print("AzureSpeech Plus Pause 1 \(String(describing: remoteIOUnit))")
         speechStream = nil
     }
     public func speakTextPlusStop() {
-        try! speakSynthesizerPlus?.stopSpeaking()
+        DispatchQueue.global().async{
+            try! self.speakSynthesizer?.stopSpeaking()
+        }
         print("AzureSpeech Plus STOP 1 \(String(describing: remoteIOUnit))")
         if (remoteIOUnit != nil) {
             print("AzureSpeech Plus STOP 2 \(String(describing: remoteIOUnit))")
