@@ -112,14 +112,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         } else if (call.method == "recognizerStart") {
             // 开始识别文本
             guard let argsArr = call.arguments as? Dictionary<String,AnyObject>,
-                let partialResults = argsArr["partialResults"] as? Bool, let onDevice = argsArr["onDevice"] as? Bool, let listenModeIndex = argsArr["listenMode"] as? Int
-                else {
-                    DispatchQueue.main.async {
-                        result(FlutterError( code: "missingOrInvalidArg",
-                                             message:"Missing arg partialResults, onDevice, listenMode, and sampleRate are required",
-                                             details: nil ))
-                    }
-                    return
+                  let partialResults = argsArr["partialResults"] as? Bool, let onDevice = argsArr["onDevice"] as? Bool, let listenModeIndex = argsArr["listenMode"] as? Int
+            else {
+                DispatchQueue.main.async {
+                    result(FlutterError( code: "missingOrInvalidArg",
+                                         message:"Missing arg partialResults, onDevice, listenMode, and sampleRate are required",
+                                         details: nil ))
+                }
+                return
             }
             var localeStr: String? = nil
             if let localeParam = argsArr["localeId"] as? String {
@@ -129,7 +129,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                 DispatchQueue.main.async {
                     result(FlutterError( code: "missingOrInvalidArg",
                                          message:"invalid value for listenMode, must be 0-2, was \(listenModeIndex)",
-                        details: nil ))
+                                         details: nil ))
                 }
                 return
             }
@@ -260,7 +260,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
         DispatchQueue.global().async{
             self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
-            // self.startAudio()
         }
         startAudio()
     }
@@ -328,7 +327,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                 
                 try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
                 
-//                try self.audioSession.setCategory(.playback,options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
+                //                try self.audioSession.setCategory(.playback,options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
             }
             catch {
                 
@@ -802,7 +801,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                             self.setupSpeechRecognition(result)
                         } else{
                             self.sendBoolResult( false, result );
-//                            os_log("User denied permission", log: self.pluginLog, type: .info)
                         }
                     })
                 }
@@ -811,13 +809,10 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
                 }
             });
         case SFSpeechRecognizerAuthorizationStatus.denied:
-//            os_log("Permission permanently denied", log: self.pluginLog, type: .info)
             sendBoolResult( false, result );
         case SFSpeechRecognizerAuthorizationStatus.restricted:
-//            os_log("Device restriction prevented initialize", log: self.pluginLog, type: .info)
             sendBoolResult( false, result );
         default:
-//            os_log("Has permissions continuing with setup", log: self.pluginLog, type: .debug)
             setupSpeechRecognition(result)
         }
     }
@@ -871,8 +866,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             currentTask?.finish()
             currentTask = nil
             currentRequest = nil
-//            sendBoolResult( false, result );
-//            return
         }
         
         returnPartialResults = partialResults
@@ -918,7 +911,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         print("listenPlusStartSpeech currentTask init complete \(String(describing: recognizer))")
         
         sendBoolResult( true, result );
-       
+        
     }
     
     
@@ -935,12 +928,11 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         do {
             let speechMsg = try jsonEncoder.encode(speechInfo)
             if let speechStr = String( data:speechMsg, encoding: .utf8) {
-//                os_log("Encoded JSON result: %{PUBLIC}@", log: pluginLog, type: .debug, speechStr )
                 print("speech.OnRecognition Encoded JSON result: \(speechStr)")
                 invokeFlutter( "speech.OnRecognition", arguments: speechStr )
             }
         } catch {
-//            os_log("Could not encode JSON", log: pluginLog, type: .error)
+            print("Could not encode JSON \(error)")
         }
     }
     
@@ -959,23 +951,17 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     
     
     private func invokeFlutter( _ callbackMethod: String, arguments: Any? ) {
-        // os_log("invokeFlutter %{PUBLIC}@", log: pluginLog, type: .debug, method.rawValue )
         DispatchQueue.main.async {
             self.azureChannel.invokeMethod(callbackMethod, arguments: arguments )
         }
-//        DispatchQueue.global().async{
-//            self.azureChannel.invokeMethod("speech.onSpeech",arguments:evt.result.text ?? "")
-//            print("sentence recognition result: \(evt.result.text ?? "(no result)")")
-//        }
     }
 }
 
 @available(iOS 10.0, *)
 extension AzureSpeechAssessmentPlugin : SFSpeechRecognizerDelegate {
     public func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
-//        let availability = available ? SpeechToTextStatus.available.rawValue : SpeechToTextStatus.unavailable.rawValue
-//        os_log("Availability changed: %{PUBLIC}@", log: pluginLog, type: .debug, availability)
-//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: availability )
+        //        let availability = available ? SpeechToTextStatus.available.rawValue : SpeechToTextStatus.unavailable.rawValue
+        //        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: availability )
     }
 }
 
@@ -988,21 +974,18 @@ extension AzureSpeechAssessmentPlugin : SFSpeechRecognitionTaskDelegate {
     
     public func speechRecognitionTaskFinishedReadingAudio(_ task: SFSpeechRecognitionTask) {
         reportError(source: "FinishedReadingAudio", error: task.error)
-//        os_log("Finished reading audio", log: pluginLog, type: .debug )
-//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
+        // invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
     }
     
     public func speechRecognitionTaskWasCancelled(_ task: SFSpeechRecognitionTask) {
         reportError(source: "TaskWasCancelled", error: task.error)
-//        os_log("Canceled reading audio", log: pluginLog, type: .debug )
-//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
+        // invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
     }
     
     public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishSuccessfully successfully: Bool) {
         reportError(source: "FinishSuccessfully", error: task.error)
-//        os_log("FinishSuccessfully", log: pluginLog, type: .debug )
         if ( !successfully ) {
-//      invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.doneNoResult.rawValue )
+            // invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.doneNoResult.rawValue )
             if let err = task.error as NSError? {
                 var errorMsg: String
                 switch err.code {
@@ -1015,13 +998,13 @@ extension AzureSpeechAssessmentPlugin : SFSpeechRecognitionTaskDelegate {
                 default:
                     errorMsg = "error_unknown (\(err.code))"
                 }
-//                let speechError = SpeechRecognitionError(errorMsg: errorMsg, permanent: true )
+                let speechError = SpeechRecognitionError(errorMsg: errorMsg, permanent: true )
                 do {
-//                    let errorResult = try jsonEncoder.encode(speechError)
-//                    invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyError, arguments: String(data:errorResult, encoding: .utf8) )
+                    let errorResult = try jsonEncoder.encode(speechError)
+                    // invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyError, arguments: String(data:errorResult, encoding: .utf8) )
+                    print("speechError \(errorResult) ")
                 } catch {
                     print("Could not encode JSON ")
-//                    os_log("Could not encode JSON", log: pluginLog, type: .error)
                 }
             }
         }
@@ -1029,14 +1012,12 @@ extension AzureSpeechAssessmentPlugin : SFSpeechRecognitionTaskDelegate {
     }
     
     public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didHypothesizeTranscription transcription: SFTranscription) {
-//        os_log("HypothesizeTranscription", log: pluginLog, type: .debug )
         reportError(source: "HypothesizeTranscription", error: task.error)
         handleResult( [transcription], isFinal: false )
     }
     
     public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishRecognition recognitionResult: SFSpeechRecognitionResult) {
         reportError(source: "FinishRecognition", error: task.error)
-//        os_log("FinishRecognition %{PUBLIC}@", log: pluginLog, type: .debug, recognitionResult.isFinal.description )
         let isFinal = recognitionResult.isFinal
         handleResult( recognitionResult.transcriptions, isFinal: isFinal )
     }
