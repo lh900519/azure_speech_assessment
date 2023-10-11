@@ -1,7 +1,32 @@
 import Flutter
 import AVFoundation
 import UIKit
+import Speech
 import MicrosoftCognitiveServicesSpeech
+
+
+
+public enum ListenMode: Int {
+    case deviceDefault = 0
+    case dictation = 1
+    case search = 2
+    case confirmation = 3
+}
+
+struct SpeechRecognitionWords : Codable {
+    let recognizedWords: String
+    let confidence: Decimal
+}
+
+struct SpeechRecognitionResult : Codable {
+    let alternates: [SpeechRecognitionWords]
+    let finalResult: Bool
+}
+
+struct SpeechRecognitionError : Codable {
+    let errorMsg: String
+    let permanent: Bool
+}
 
 public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     var azureChannel: FlutterMethodChannel
@@ -66,12 +91,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             // print("Called speakStop")
             speakStop();
         } else if (call.method == "initSpeakTextPlus") {
+            // 初始化
             let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
             let serviceRegion = args?["region"] ?? ""
             let lang = args?["language"] ?? ""
             let voiceName = args?["voiceName"] ?? ""
             
             initSpeakTextPlus(speechSubscriptionKey: speechSubscriptionKey,serviceRegion: serviceRegion, lang: lang, voiceName: voiceName);
+            initializeRecognizer(result)
         } else if (call.method == "speakTextPlus") {
             let text = args?["text"] ?? ""
             speakTextPlus(text: text);
@@ -82,6 +109,34 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             speakTextPlusStop();
         } else if (call.method == "speakTextPlusPause") {
             speakTextPlusPause();
+        } else if (call.method == "recognizerStart") {
+            // 开始识别文本
+            guard let argsArr = call.arguments as? Dictionary<String,AnyObject>,
+                let partialResults = argsArr["partialResults"] as? Bool, let onDevice = argsArr["onDevice"] as? Bool, let listenModeIndex = argsArr["listenMode"] as? Int
+                else {
+                    DispatchQueue.main.async {
+                        result(FlutterError( code: "missingOrInvalidArg",
+                                             message:"Missing arg partialResults, onDevice, listenMode, and sampleRate are required",
+                                             details: nil ))
+                    }
+                    return
+            }
+            var localeStr: String? = nil
+            if let localeParam = argsArr["localeId"] as? String {
+                localeStr = localeParam
+            }
+            guard let listenMode = ListenMode(rawValue: listenModeIndex) else {
+                DispatchQueue.main.async {
+                    result(FlutterError( code: "missingOrInvalidArg",
+                                         message:"invalid value for listenMode, must be 0-2, was \(listenModeIndex)",
+                        details: nil ))
+                }
+                return
+            }
+            recognizerStart( result, localeStr: localeStr, partialResults: partialResults, onDevice: onDevice, listenMode: listenMode)
+        } else if (call.method == "recognizerStop") {
+            // 停止识别文本
+            recognizerStop(result);
         }
         
         else {
@@ -196,14 +251,18 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             // print("####################### speech AudioCategoryOptions \(self.audioSession.categoryOptions)")
             // try audioSession.setMode(AVAudioSession.Mode.default)
             try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            try self.audioSession.setPreferredIOBufferDuration(0.02)
+            
         } catch {
             print("audioSession error \(error) happened")
         }
         
         DispatchQueue.global().async{
             self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
-            self.startAudio()
+            // self.startAudio()
         }
+        startAudio()
     }
     
     
@@ -246,7 +305,6 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    
     public func speakTextPlusPause() {
         DispatchQueue.global().async{
             try! self.speakSynthesizer?.stopSpeaking()
@@ -264,10 +322,13 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             AudioOutputUnitStop(remoteIOUnit!);
             print("AzureSpeech Plus STOP 3 \(String(describing: remoteIOUnit))")
             do {
-//                if let rememberedAudioCategory = rememberedAudioCategory, let rememberedAudioCategoryOptions = rememberedAudioCategoryOptions {
-//                    try self.audioSession.setCategory(rememberedAudioCategory,options: rememberedAudioCategoryOptions)
-//                }
-                try self.audioSession.setCategory(.playback,options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
+                if let rememberedAudioCategory = rememberedAudioCategory, let rememberedAudioCategoryOptions = rememberedAudioCategoryOptions {
+                    try self.audioSession.setCategory(rememberedAudioCategory,options: rememberedAudioCategoryOptions)
+                }
+                
+                try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+                
+//                try self.audioSession.setCategory(.playback,options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
             }
             catch {
                 
@@ -289,7 +350,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     private func stopAudio() {
         if (!speeching) {return}
         speeching = false
-       
+        
         print("AzureSpeech STOP 1 \(String(describing: remoteIOUnit))")
         if (remoteIOUnit != nil) {
             print("AzureSpeech STOP 2 \(String(describing: remoteIOUnit))")
@@ -301,9 +362,78 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
     }
     
+    let renderCallback: AURenderCallback = {
+        (inRefCon: UnsafeMutableRawPointer,
+         ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+         inTimeStamp:  UnsafePointer<AudioTimeStamp>,
+         inBusNumber: UInt32,
+         inNumberFrames: UInt32,
+         ioData: UnsafeMutablePointer<AudioBufferList>?) -> OSStatus in
+        
+        var status = noErr
+        
+        guard let length = ioData?.pointee.mBuffers.mDataByteSize else { return noErr }
+        memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
+        
+        return status
+    }
+    
+    let recordCallback: AURenderCallback = {
+        (inRefCon: UnsafeMutableRawPointer,
+         ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
+         inTimeStamp:  UnsafePointer<AudioTimeStamp>,
+         inBusNumber: UInt32,
+         inNumberFrames: UInt32,
+         ioData: UnsafeMutablePointer<AudioBufferList>?) -> OSStatus in
+        
+        let sstp = unsafeBitCast(inRefCon, to: AzureSpeechAssessmentPlugin.self)
+        
+        var buffers = AudioBufferList(
+            mNumberBuffers: 1,      //只需要一个音频缓冲
+            mBuffers: AudioBuffer(
+                mNumberChannels: 1, //声道数
+                mDataByteSize: inNumberFrames * 2,
+                mData: nil
+            )
+        )
+        
+        // 从输入 AUHAL 中检索捕获的样本
+        let status = AudioUnitRender(
+            sstp.remoteIOUnit!,
+            ioActionFlags,
+            inTimeStamp,
+            inBusNumber,
+            inNumberFrames,
+            &buffers)
+        guard status == noErr else {
+            print("####################### AudioUnitRender error \(status)")
+            return status
+        }
+        
+        
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)
+        let audioBuffer = AVAudioPCMBuffer(pcmFormat: format!, frameCapacity: AVAudioFrameCount(buffers.mBuffers.mDataByteSize / 2))!
+        audioBuffer.frameLength = audioBuffer.frameCapacity
+        
+        guard let bufferData = buffers.mBuffers.mData else {
+            print("####################### bufferData error")
+            return status
+        }
+        
+        memcpy(audioBuffer.int16ChannelData?[0], bufferData, Int(buffers.mBuffers.mDataByteSize))
+        
+        guard let audioformat = sstp.currentRequest?.nativeAudioFormat else {
+            return status
+        }
+        sstp.currentRequest?.append(audioBuffer)
+        
+        return errno
+    }
+    
+    
     //需要实例化的AudioUnit
     var remoteIOUnit: AudioUnit? = nil;
-    let callback: AURenderCallback = {
+    let playVoiceCallback: AURenderCallback = {
         (inRefCon: UnsafeMutableRawPointer,
          ioActionFlags: UnsafeMutablePointer<AudioUnitRenderActionFlags>,
          inTimeStamp:  UnsafePointer<AudioTimeStamp>,
@@ -325,7 +455,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         if (this.speechStream != nil) {
             let bufferData: AudioBuffer = ioData!.pointee.mBuffers
             // guard let buffer = ioData?.pointee.mBuffers.mData else { return noErr }
-           
+            
             var data = NSMutableData(capacity: Int(length))
             if this.speechStream!.read(data!, length: UInt(length)) > 0 {
                 // memset(ioData?.pointee.mBuffers.mData, 0, Int(length))
@@ -342,6 +472,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         return status
     }
     
+    // 开启音频输出模式
     private func startAudio() {
         speeching = true
         // 1.1 创建AudioComponentDescription用来标识AudioUnit
@@ -350,7 +481,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         //AudioUnit的主类型
         componentDesc.componentType = kAudioUnitType_Output;
         //AudioUnit的子类型
-        componentDesc.componentSubType = kAudioUnitSubType_RemoteIO;
+        componentDesc.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
         //AudioUnit制造商，目前只支持苹果
         componentDesc.componentManufacturer = kAudioUnitManufacturer_Apple;
         //以下两个字段固定是0
@@ -370,7 +501,18 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             print("speechResult ####################### 实例化AudioUnit错误")
             return
         }
-
+        
+        var disableFlag: UInt32 = 0
+        var enableFlag: UInt32 = 1;
+        
+        //开启麦克风
+        AudioUnitSetProperty(remoteIOUnit!,
+                             kAudioOutputUnitProperty_EnableIO,
+                             kAudioUnitScope_Input,
+                             1,
+                             &enableFlag,
+                             UInt32(MemoryLayout<UInt32>.size))
+        
         // 设置AudioUnit基本参数
         var mAudioFormat = AudioStreamBasicDescription()
         mAudioFormat.mSampleRate = 16000;
@@ -385,35 +527,65 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
         let size: UInt32 = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         status = AudioUnitSetProperty(remoteIOUnit!,
-                            kAudioUnitProperty_StreamFormat,
-                            kAudioUnitScope_Output,
-                            1,
-                            &mAudioFormat,
-                            size)
+                                      kAudioUnitProperty_StreamFormat,
+                                      kAudioUnitScope_Output,
+                                      1,
+                                      &mAudioFormat,
+                                      size)
         if (status != 0) {
             print("speechResult ####################### kAudioUnitProperty_StreamFormat of bus 1 failed")
             return
         }
         status = AudioUnitSetProperty(remoteIOUnit!,
-                            kAudioUnitProperty_StreamFormat,
-                            kAudioUnitScope_Input,
-                            0,
-                            &mAudioFormat,
-                            size)
+                                      kAudioUnitProperty_StreamFormat,
+                                      kAudioUnitScope_Input,
+                                      0,
+                                      &mAudioFormat,
+                                      size)
         if (status != 0) {
             print("speechResult ####################### kAudioUnitProperty_StreamFormat of bus 0 failed")
             return
         }
         
-        var callbackStruct = AURenderCallbackStruct(inputProc: callback, inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+        //        var cb = AURenderCallbackStruct(
+        //                inputProc: renderCallback,
+        //                inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+        //        status = AudioUnitSetProperty(remoteIOUnit!,
+        //                            kAudioUnitProperty_SetRenderCallback,
+        //                            kAudioUnitScope_Output,
+        //                            0,
+        //                            &cb,
+        //                            UInt32(MemoryLayout<AURenderCallbackStruct>.size))
+        //        if (status != 0) {
+        //            print("####################### 设置采集回调失败 1")
+        //            return
+        //        }
+        // 设置录音回调
+        var recordCallbackStruct = AURenderCallbackStruct(
+            inputProc: recordCallback,
+            inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+        
         status = AudioUnitSetProperty(remoteIOUnit!,
-                            kAudioUnitProperty_SetRenderCallback,
-                            kAudioUnitScope_Input,
-                            0,
-                            &callbackStruct,
-                            UInt32(MemoryLayout<AURenderCallbackStruct>.size))
+                                      kAudioOutputUnitProperty_SetInputCallback,
+                                      kAudioUnitScope_Output,
+                                      0,
+                                      &recordCallbackStruct,
+                                      UInt32(MemoryLayout<AURenderCallbackStruct>.size))
         if (status != 0) {
-            print("speechResult ####################### 设置采集回调失败")
+            print("speechResult ####################### 设置录音回调失败")
+            return
+        }
+        
+        // 设置播放回调
+        var playVoiceCallbackStruct = AURenderCallbackStruct(inputProc: playVoiceCallback, inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+        status = AudioUnitSetProperty(remoteIOUnit!,
+                                      kAudioUnitProperty_SetRenderCallback,
+                                      kAudioUnitScope_Input,
+                                      0,
+                                      &playVoiceCallbackStruct,
+                                      UInt32(MemoryLayout<AURenderCallbackStruct>.size))
+        if (status != 0) {
+            print("speechResult ####################### 设置播放回调失败")
             return
         }
         
@@ -614,6 +786,264 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             azureChannel.invokeMethod("speech.onFinalAssessment", arguments: pronunciationAssessmentResultJson)
         }
         
-    }    
+    }
+    
+    // 初始化语音识别
+    private func initializeRecognizer( _ result: @escaping FlutterResult) {
+        var success = false
+        let status = SFSpeechRecognizer.authorizationStatus()
+        switch status {
+        case SFSpeechRecognizerAuthorizationStatus.notDetermined:
+            SFSpeechRecognizer.requestAuthorization({(status)->Void in
+                success = status == SFSpeechRecognizerAuthorizationStatus.authorized
+                if ( success ) {
+                    self.audioSession.requestRecordPermission({(granted: Bool)-> Void in
+                        if granted {
+                            self.setupSpeechRecognition(result)
+                        } else{
+                            self.sendBoolResult( false, result );
+//                            os_log("User denied permission", log: self.pluginLog, type: .info)
+                        }
+                    })
+                }
+                else {
+                    self.sendBoolResult( false, result );
+                }
+            });
+        case SFSpeechRecognizerAuthorizationStatus.denied:
+//            os_log("Permission permanently denied", log: self.pluginLog, type: .info)
+            sendBoolResult( false, result );
+        case SFSpeechRecognizerAuthorizationStatus.restricted:
+//            os_log("Device restriction prevented initialize", log: self.pluginLog, type: .info)
+            sendBoolResult( false, result );
+        default:
+//            os_log("Has permissions continuing with setup", log: self.pluginLog, type: .debug)
+            setupSpeechRecognition(result)
+        }
+    }
+    
+    private func setupSpeechRecognition( _ result: @escaping FlutterResult) {
+        setupRecognizerForLocale( locale: Locale.current )
+        guard recognizer != nil else {
+            sendBoolResult( false, result );
+            return
+        }
+        
+        recognizer?.delegate = self
+    }
+    
+    private func setupRecognizerForLocale( locale: Locale ) {
+        if ( previousLocale == locale ) {
+            return
+        }
+        previousLocale = locale
+        recognizer = SFSpeechRecognizer( locale: locale )
+    }
+    
+    private var recognizer: SFSpeechRecognizer?
+    private var currentRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var currentTask: SFSpeechRecognitionTask?
+    private var returnPartialResults: Bool = true
+    private let jsonEncoder = JSONEncoder()
+    private var previousLocale: Locale?
+    
+    fileprivate func sendBoolResult( _ value: Bool, _ result: @escaping FlutterResult) {
+        DispatchQueue.main.async {
+            result( value )
+        }
+    }
+    
+    // 停止系统的语音转文字
+    public func recognizerStop( _ result: @escaping FlutterResult) {
+        currentRequest?.endAudio()
+        currentTask?.finish()
+        currentTask = nil
+        currentRequest = nil
+        sendBoolResult( true, result );
+        print("recognizerStop \(String(describing: currentTask))")
+    }
+    
+    // 开始系统的语音转文字
+    public func recognizerStart(_ result: @escaping FlutterResult, localeStr: String?, partialResults: Bool, onDevice: Bool, listenMode: ListenMode) {
+        if ( nil != currentTask) {
+            print("recognizerStart currentTask is not nil. \(String(describing: currentTask))")
+            currentRequest?.endAudio()
+            currentTask?.finish()
+            currentTask = nil
+            currentRequest = nil
+//            sendBoolResult( false, result );
+//            return
+        }
+        
+        returnPartialResults = partialResults
+        guard let localRecognizer = recognizer else {
+            print("Failed to create speech recognizer")
+            return
+        }
+        if ( onDevice ) {
+            if #available(iOS 13.0, *), !localRecognizer.supportsOnDeviceRecognition {
+                print("Failed to create speech recognizer, on device recognition is not supported on this device")
+                result(FlutterError( code: "onDeviceError",
+                                     message:"on device recognition is not supported on this device",
+                                     details: nil ))
+            }
+        }
+        
+        self.currentRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let currentRequest = self.currentRequest else {
+            sendBoolResult( false, result );
+            print("listenPlusStartSpeech currentTask init error")
+            return
+        }
+        currentRequest.shouldReportPartialResults = true
+        if #available(iOS 13.0, *), onDevice {
+            currentRequest.requiresOnDeviceRecognition = true
+        }
+        switch listenMode {
+        case ListenMode.dictation:
+            currentRequest.taskHint = SFSpeechRecognitionTaskHint.dictation
+            break
+        case ListenMode.search:
+            currentRequest.taskHint = SFSpeechRecognitionTaskHint.search
+            break
+        case ListenMode.confirmation:
+            currentRequest.taskHint = SFSpeechRecognitionTaskHint.confirmation
+            break
+        default:
+            break
+        }
+        
+        self.currentTask = self.recognizer?.recognitionTask(with: currentRequest, delegate: self )
+        
+        print("listenPlusStartSpeech currentTask init complete \(String(describing: recognizer))")
+        
+        sendBoolResult( true, result );
+       
+    }
+    
+    
+    private func handleResult( _ transcriptions: [SFTranscription], isFinal: Bool ) {
+        if ( !isFinal && !returnPartialResults ) {
+            return
+        }
+        var speechWords: [SpeechRecognitionWords] = []
+        for transcription in transcriptions {
+            let words: SpeechRecognitionWords = SpeechRecognitionWords(recognizedWords: transcription.formattedString, confidence: confidenceIn( transcription))
+            speechWords.append( words )
+        }
+        let speechInfo = SpeechRecognitionResult(alternates: speechWords, finalResult: isFinal )
+        do {
+            let speechMsg = try jsonEncoder.encode(speechInfo)
+            if let speechStr = String( data:speechMsg, encoding: .utf8) {
+//                os_log("Encoded JSON result: %{PUBLIC}@", log: pluginLog, type: .debug, speechStr )
+                print("speech.OnRecognition Encoded JSON result: \(speechStr)")
+                invokeFlutter( "speech.OnRecognition", arguments: speechStr )
+            }
+        } catch {
+//            os_log("Could not encode JSON", log: pluginLog, type: .error)
+        }
+    }
+    
+    private func confidenceIn( _ transcription: SFTranscription ) -> Decimal {
+        guard ( transcription.segments.count > 0 ) else {
+            return 0;
+        }
+        var totalConfidence: Float = 0.0;
+        for segment in transcription.segments {
+            totalConfidence += segment.confidence
+        }
+        let avgConfidence: Float = totalConfidence / Float(transcription.segments.count )
+        let confidence: Float = (avgConfidence * 1000).rounded() / 1000
+        return Decimal( string: String( describing: confidence ) )!
+    }
+    
+    
+    private func invokeFlutter( _ callbackMethod: String, arguments: Any? ) {
+        // os_log("invokeFlutter %{PUBLIC}@", log: pluginLog, type: .debug, method.rawValue )
+        DispatchQueue.main.async {
+            self.azureChannel.invokeMethod(callbackMethod, arguments: arguments )
+        }
+//        DispatchQueue.global().async{
+//            self.azureChannel.invokeMethod("speech.onSpeech",arguments:evt.result.text ?? "")
+//            print("sentence recognition result: \(evt.result.text ?? "(no result)")")
+//        }
+    }
 }
 
+@available(iOS 10.0, *)
+extension AzureSpeechAssessmentPlugin : SFSpeechRecognizerDelegate {
+    public func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
+//        let availability = available ? SpeechToTextStatus.available.rawValue : SpeechToTextStatus.unavailable.rawValue
+//        os_log("Availability changed: %{PUBLIC}@", log: pluginLog, type: .debug, availability)
+//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: availability )
+    }
+}
+
+@available(iOS 10.0, *)
+extension AzureSpeechAssessmentPlugin : SFSpeechRecognitionTaskDelegate {
+    public func speechRecognitionDidDetectSpeech(_ task: SFSpeechRecognitionTask) {
+        // Do nothing for now
+        reportError(source: "speechRecognitionDidDetectSpeech", error: task.error)
+    }
+    
+    public func speechRecognitionTaskFinishedReadingAudio(_ task: SFSpeechRecognitionTask) {
+        reportError(source: "FinishedReadingAudio", error: task.error)
+//        os_log("Finished reading audio", log: pluginLog, type: .debug )
+//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
+    }
+    
+    public func speechRecognitionTaskWasCancelled(_ task: SFSpeechRecognitionTask) {
+        reportError(source: "TaskWasCancelled", error: task.error)
+//        os_log("Canceled reading audio", log: pluginLog, type: .debug )
+//        invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.notListening.rawValue )
+    }
+    
+    public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishSuccessfully successfully: Bool) {
+        reportError(source: "FinishSuccessfully", error: task.error)
+//        os_log("FinishSuccessfully", log: pluginLog, type: .debug )
+        if ( !successfully ) {
+//      invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyStatus, arguments: SpeechToTextStatus.doneNoResult.rawValue )
+            if let err = task.error as NSError? {
+                var errorMsg: String
+                switch err.code {
+                case 201:
+                    errorMsg = "error_speech_recognizer_disabled"
+                case 203:
+                    errorMsg = "error_retry"
+                case 1110:
+                    errorMsg = "error_no_match"
+                default:
+                    errorMsg = "error_unknown (\(err.code))"
+                }
+//                let speechError = SpeechRecognitionError(errorMsg: errorMsg, permanent: true )
+                do {
+//                    let errorResult = try jsonEncoder.encode(speechError)
+//                    invokeFlutter( SwiftSpeechToTextCallbackMethods.notifyError, arguments: String(data:errorResult, encoding: .utf8) )
+                } catch {
+                    print("Could not encode JSON ")
+//                    os_log("Could not encode JSON", log: pluginLog, type: .error)
+                }
+            }
+        }
+        // stopCurrentListen( )
+    }
+    
+    public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didHypothesizeTranscription transcription: SFTranscription) {
+//        os_log("HypothesizeTranscription", log: pluginLog, type: .debug )
+        reportError(source: "HypothesizeTranscription", error: task.error)
+        handleResult( [transcription], isFinal: false )
+    }
+    
+    public func speechRecognitionTask(_ task: SFSpeechRecognitionTask, didFinishRecognition recognitionResult: SFSpeechRecognitionResult) {
+        reportError(source: "FinishRecognition", error: task.error)
+//        os_log("FinishRecognition %{PUBLIC}@", log: pluginLog, type: .debug, recognitionResult.isFinal.description )
+        let isFinal = recognitionResult.isFinal
+        handleResult( recognitionResult.transcriptions, isFinal: isFinal )
+    }
+    
+    private func reportError( source: String, error: Error?) {
+        if ( nil != error) {
+            print("\(source) \(String(describing: error))")
+        }
+    }
+}

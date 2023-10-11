@@ -1,6 +1,42 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:azure_speech_assessment/azure_speech_recognition_result.dart';
+
 import 'azure_speech_assessment_platform_interface.dart';
 import 'package:flutter/services.dart';
+
+/// Describes the goal of your speech recognition to the system.
+///
+/// Currently only supported on **iOS**.
+///
+/// See also:
+/// * https://developer.apple.com/documentation/speech/sfspeechrecognitiontaskhint
+enum AzureListenMode {
+  /// The device default.
+  deviceDefault,
+
+  /// When using captured speech for text entry.
+  ///
+  /// Use this when you are using speech recognition for a task that's similar to the keyboard's built-in dictation function.
+  dictation,
+
+  /// When using captured speech to specify search terms.
+  ///
+  /// Use this when you are using speech recognition to identify search terms.
+  search,
+
+  /// When using captured speech for short, confirmation-style requests.
+  ///
+  /// Use this when you are using speech recognition to handle confirmation commands, such as "yes", "no" or "maybe".
+  confirmation,
+}
+
+/// Notified as words are recognized with the current set of recognized words.
+///
+/// See the [onResult] argument on the [SpeechToText.listen] method for use.
+typedef AzureSpeechResultListener = void Function(
+    AzureSpeechRecognitionResult result);
 
 typedef void StringResultHandler(String text);
 
@@ -67,6 +103,7 @@ class AzureSpeechAssessment {
   VoidCallback? recognitionStartedHandler;
   VoidCallback? startRecognitionHandler;
   VoidCallback? recognitionStoppedHandler;
+  static AzureSpeechResultListener? recognitionHandler;
 
   VoidCallback? speakStartedHandler;
   VoidCallback? speakStoppedHandler;
@@ -102,6 +139,14 @@ class AzureSpeechAssessment {
         break;
       case "speech.onException":
         if (exceptionHandler != null) exceptionHandler!(call.arguments);
+        break;
+      case "speech.OnRecognition":
+        if (call.arguments is String && recognitionHandler != null) {
+          Map<String, dynamic> resultMap = jsonDecode(call.arguments);
+          var speechResult = AzureSpeechRecognitionResult.fromJson(resultMap);
+          recognitionHandler!(speechResult);
+        }
+
         break;
 
       default:
@@ -320,5 +365,27 @@ class AzureSpeechAssessment {
     } else {
       throw "Error: SpeechRecognitionParameters not initialized correctly";
     }
+  }
+
+  // recognizerStop
+  static Future recognizerStop() async {
+    return await _channel.invokeMethod('recognizerStop');
+  }
+
+  // recognizerStart
+  static Future recognizerStart({
+    AzureSpeechResultListener? onResult,
+    String? localeId,
+    onDevice = false,
+    AzureListenMode listenMode = AzureListenMode.confirmation,
+  }) async {
+    recognitionHandler = onResult;
+
+    return await _channel.invokeMethod('recognizerStart', {
+      "partialResults": true,
+      "onDevice": onDevice,
+      "listenMode": listenMode.index,
+      "localeId": localeId
+    });
   }
 }
