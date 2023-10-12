@@ -206,7 +206,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
         }
         do {
-            try self.audioSession.setCategory(AVAudioSession.Category.playAndRecord, options: [.defaultToSpeaker,.allowBluetooth,.allowBluetoothA2DP])
+            try self.audioSession.setCategory(AVAudioSession.Category.playback, options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
             try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("audioSession error \(error) happened")
