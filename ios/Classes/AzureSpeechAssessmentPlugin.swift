@@ -188,23 +188,23 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     }
     
     public func speakText(text:String, speechSubscriptionKey : String, serviceRegion : String, lang: String, voiceName: String) {
-        if (speakSynthesizer == nil) {
-            var speechConfig: SPXSpeechConfiguration?
-            do {
-                try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
-                // speechConfig!.enableDictation()
-                speechConfig!.speechSynthesisLanguage = lang
-                speechConfig!.speechSynthesisVoiceName = voiceName
-                
-                // 设置音频格式
-                speechConfig!.setSpeechSynthesisOutputFormat(.raw16Khz16BitMonoPcm)
-            } catch {
-                print("error \(error) happened")
-                speechConfig = nil
-            }
-            let audioConfig = SPXAudioConfiguration()
-            speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
+
+        var speechConfig: SPXSpeechConfiguration?
+        do {
+            try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
+            // speechConfig!.enableDictation()
+            speechConfig!.speechSynthesisLanguage = lang
+            speechConfig!.speechSynthesisVoiceName = voiceName
+            
+            // 设置音频格式
+            speechConfig!.setSpeechSynthesisOutputFormat(.raw16Khz16BitMonoPcm)
+        } catch {
+            print("error \(error) happened")
+            speechConfig = nil
         }
+        let audioConfig = SPXAudioConfiguration()
+        speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
+
         do {
             try self.audioSession.setCategory(AVAudioSession.Category.playback, options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
             try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
@@ -306,14 +306,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     
     public func speakTextPlusPause() {
         DispatchQueue.global().async{
-            try! self.speakSynthesizer?.stopSpeaking()
+            try! self.speakSynthesizerPlus?.stopSpeaking()
         }
         print("AzureSpeech Plus Pause 1 \(String(describing: remoteIOUnit))")
         speechStream = nil
     }
     public func speakTextPlusStop() {
         DispatchQueue.global().async{
-            try! self.speakSynthesizer?.stopSpeaking()
+            try! self.speakSynthesizerPlus?.stopSpeaking()
         }
         print("AzureSpeech Plus STOP 1 \(String(describing: remoteIOUnit))")
         if (remoteIOUnit != nil) {
