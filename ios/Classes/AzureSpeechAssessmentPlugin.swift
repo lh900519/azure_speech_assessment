@@ -184,6 +184,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     public func speakStop() {
         DispatchQueue.global().async{
             try! self.speakSynthesizer?.stopSpeaking()
+            
+            try! self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
     
@@ -206,7 +208,11 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
 
         do {
-            try self.audioSession.setCategory(AVAudioSession.Category.playback, options: [.allowBluetooth,.allowBluetoothA2DP,.mixWithOthers])
+            try self.audioSession.setCategory(AVAudioSession.Category.playback, options: [
+                .allowBluetooth,
+                .allowBluetoothA2DP,
+                .duckOthers
+            ])
             try self.audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("audioSession error \(error) happened")
@@ -216,6 +222,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
             let speechResult = try! self.speakSynthesizer?.speakText(text)
             self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
+          
+            try! self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
     
