@@ -183,9 +183,12 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
     }
     public func speakStop() {
         DispatchQueue.global().async{
-            try! self.speakSynthesizer?.stopSpeaking()
-            
-            try! self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+          do {
+              try self.speakSynthesizer?.stopSpeaking()
+              // try self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+          } catch {
+              print("speakStop error \(error)")
+          }
         }
     }
     
@@ -219,11 +222,15 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         }
         
         DispatchQueue.global().async{
-            self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
-            let speechResult = try! self.speakSynthesizer?.speakText(text)
-            self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
-          
-            try! self.audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            do {
+                self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
+                print("speech.onSpeakStarted")
+                try self.speakSynthesizer?.speakText(text)
+                self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
+                print("speech.onSpeakStopped")
+            } catch {
+                print("speech error \(error)")
+            }
         }
     }
     
