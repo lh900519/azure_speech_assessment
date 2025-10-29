@@ -141,6 +141,25 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
           result.success(true);
 
         }
+        "continuousStop" -> {
+          val logTag: String = "continuousStop";
+          if (continuousListeningStarted) {
+            if (reco != null) {
+              val task = reco.stopContinuousRecognitionAsync();
+
+              setOnTaskCompletedListener(task) {
+                Log.i(logTag, "Continuous recognition stopped.");
+                continuousListeningStarted = false;
+                invokeMethod("speech.onRecognitionStopped", null);
+                reco.close();
+
+              }
+            } else {
+              continuousListeningStarted = false;
+            }
+          }
+          result.success(true);
+        }
         "intentRecognizer" -> {
           val permissionRequestId: Int = 5;
           val speechSubscriptionKey: String = "" + call.argument("subscriptionKey");

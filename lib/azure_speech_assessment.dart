@@ -331,6 +331,10 @@ class AzureSpeechAssessment {
       throw "Error: SpeechRecognitionParameters not initialized correctly";
     }
   }
+  
+  static continuousStop() {
+    _channel.invokeMethod('continuousStop');
+  }
 
   /// Intent recognition
   /// Return the intent obtained or the error catched
