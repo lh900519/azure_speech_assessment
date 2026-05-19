@@ -63,11 +63,7 @@ class AzureSpeechAssessment {
   static String _voiceName = "en-US-JennyNeural";
   static String _timeout = "500";
 
-  static String? _languageUnderstandingSubscriptionKey;
-  static String? _languageUnderstandingServiceRegion;
-  static String? _languageUnderstandingAppId;
-
-  /// default intitializer for almost every type except for the intent recognizer.
+  /// default intitializer
   /// Default language -> English
   AzureSpeechAssessment.initialize(String subKey, String region,
       {String? lang, String? timeout, String? voiceName}) {
@@ -82,18 +78,6 @@ class AzureSpeechAssessment {
         throw "Segmentation silence timeout must be an integer in the range 100 to 5000. See https://learn.microsoft.com/en-us/azure/cognitive-services/speech-service/how-to-recognize-speech?pivots=programming-language-csharp#change-how-silence-is-handled for more information.";
       }
     }
-  }
-
-  /// initializer for intent purpose
-  /// Default language -> English
-  AzureSpeechAssessment.initializeLanguageUnderstading(
-      String subKey, String region, String appId,
-      {lang, voiceName}) {
-    _languageUnderstandingSubscriptionKey = subKey;
-    _languageUnderstandingServiceRegion = region;
-    _languageUnderstandingAppId = appId;
-    if (lang != null) _lang = lang;
-    if (voiceName != null) _voiceName = voiceName;
   }
 
   StringResultHandler? exceptionHandler;
@@ -334,24 +318,6 @@ class AzureSpeechAssessment {
   
   static continuousStop() {
     _channel.invokeMethod('continuousStop');
-  }
-
-  /// Intent recognition
-  /// Return the intent obtained or the error catched
-
-  static intentRecognizer() {
-    if (_languageUnderstandingSubscriptionKey != null &&
-        _languageUnderstandingServiceRegion != null &&
-        _languageUnderstandingAppId != null) {
-      _channel.invokeMethod('intentRecognizer', {
-        'language': _lang,
-        'subscriptionKey': _languageUnderstandingSubscriptionKey,
-        'appId': _languageUnderstandingAppId,
-        'region': _languageUnderstandingServiceRegion
-      });
-    } else {
-      throw "Error: LanguageUnderstading not initialized correctly";
-    }
   }
 
   /// Speech recognition with Keywords

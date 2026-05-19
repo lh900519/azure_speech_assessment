@@ -34,13 +34,6 @@ The segmentation silence timeout default is 1000 ms. (It must be an integer in t
 AzureSpeechRecognition.initialize("your_subscription_key", "your_server_region",lang: "it-IT", timeout: "3000");
 ```
 
-### Intent initializer
-It should be used only in IntentRecognition.
-The language default setting is "en-EN" but you could use what you want (if it is supported). 
-```dart
-AzureSpeechRecognition.initializeLanguageUnderstading("your_language_subscription_key", "your_language_server_region", "your_language_appId",lang:"it-IT");
-```
-
 ## Types of recognitions 
 
 ### Simple voice recognition (Android and iOS supported)
@@ -124,40 +117,6 @@ Future recognizeVoiceMicStreaming() async {
 
 ### Voice recognition continuously : CURRENTLY NOT WORKING
 It returns in the recognitionResultHandler the temporary phrases that it understand and at when the function is called again the final response is returned by the setFinalTranscription method.
-
-### Voice intent recognition
-It returns in the recognitionResultHandler the temporary phrases that it understand and at the end the final response is returned by the setFinalTranscription method.
-
-```dart
-
-void activateSpeechRecognizer(){
-    // MANDATORY INITIALIZATION
-  AzureSpeechRecognition.initializeLanguageUnderstading(subKey, region, appId, lang: lang);
-  
-  _speechAzure.setFinalTranscription((text) {
-    // do what you want with your final transcription
-  });
-
-  _speechAzure.setRecognitionResultHandler((text) {
-    // do what you want with your partial transcription (this one is called every time a word is recognized)
-    // if you have a string that is displayed you could call here setState() to updated with the partial result
-  });
-
-  _speechAzure.setRecognitionStartedHandler(() {
-   // called at the start of recognition (it could also not be used)
-  });
-
-}
-
-
-Future speechIntentRecognizer() async {
-    try {
-      AzureSpeechRecognition.intentRecognizer();
-    } on PlatformException catch (e) {
-      print("Failed start the recognition: '${e.message}'.");
-    }
-  }
-```
 
 ### Voice recognition with keyword : CURRENTLY NOT WORKING
 This method require the keywords file to be put in the asset folder.

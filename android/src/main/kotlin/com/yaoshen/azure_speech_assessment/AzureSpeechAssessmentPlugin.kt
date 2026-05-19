@@ -1,7 +1,5 @@
 package com.yaoshen.azure_speech_assessment;
 
-//import androidx.core.app.ActivityCompat;
-
 import android.app.Activity
 import android.os.Build
 import android.os.Handler
@@ -10,7 +8,6 @@ import android.text.TextUtils
 import android.util.Log
 import androidx.annotation.NonNull
 import androidx.annotation.RequiresApi
-import com.microsoft.cognitiveservices.speech.CancellationDetails
 import com.microsoft.cognitiveservices.speech.KeywordRecognitionModel
 import com.microsoft.cognitiveservices.speech.PronunciationAssessmentConfig
 import com.microsoft.cognitiveservices.speech.PronunciationAssessmentGradingSystem
@@ -20,13 +17,9 @@ import com.microsoft.cognitiveservices.speech.ResultReason
 import com.microsoft.cognitiveservices.speech.SpeechConfig
 import com.microsoft.cognitiveservices.speech.SpeechRecognitionResult
 import com.microsoft.cognitiveservices.speech.SpeechRecognizer
-import com.microsoft.cognitiveservices.speech.SpeechSynthesisCancellationDetails
 import com.microsoft.cognitiveservices.speech.SpeechSynthesisResult
 import com.microsoft.cognitiveservices.speech.SpeechSynthesizer
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig
-import com.microsoft.cognitiveservices.speech.intent.IntentRecognitionResult
-import com.microsoft.cognitiveservices.speech.intent.IntentRecognizer
-import com.microsoft.cognitiveservices.speech.intent.LanguageUnderstandingModel
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -159,18 +152,6 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
             }
           }
           result.success(true);
-        }
-        "intentRecognizer" -> {
-          val permissionRequestId: Int = 5;
-          val speechSubscriptionKey: String = "" + call.argument("subscriptionKey");
-          val serviceRegion: String = "" + call.argument("region");
-          val appId: String = "" + call.argument("appId");
-          val lang: String = "" + call.argument("language");
-
-
-          recognizeIntent(speechSubscriptionKey, serviceRegion, appId, lang);
-          result.success(true);
-
         }
         "keywordRecognizer" -> {
           val permissionRequestId: Int = 5;
@@ -476,83 +457,6 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
       assert(false);
       invokeMethod("speech.onException", "Exception: " + exec.message);
 
-    }
-  }
-
-
-  /// Recognize Intent method from microsoft sdk
-
-  @RequiresApi(Build.VERSION_CODES.KITKAT)
-  private fun recognizeIntent(
-    speechSubscriptionKey: String,
-    serviceRegion: String,
-    appId: String,
-    lang: String
-  ) {
-    val logTag: String = "intent";
-
-    val content: ArrayList<String> = ArrayList<String>();
-
-    content.add("");
-    content.add("");
-
-    try {
-
-      val audioInput = AudioConfig.fromStreamInput(createMicrophoneStream());
-
-
-      val config: SpeechConfig =
-        SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
-
-      assert(config != null);
-
-      config.speechRecognitionLanguage = lang;
-
-      val reco = IntentRecognizer(config, audioInput);
-
-      val intentModel: LanguageUnderstandingModel = LanguageUnderstandingModel.fromAppId(appId);
-      reco.addAllIntents(intentModel);
-
-      reco.recognizing.addEventListener { o, intentRecognitionResultEventArgs ->
-        val s = intentRecognitionResultEventArgs.result.text
-        content[0] = s;
-        Log.i(logTag, "Final result received: $s")
-        invokeMethod("speech.onFinalResponse", TextUtils.join(System.lineSeparator(), content));
-      };
-
-
-      val task: Future<IntentRecognitionResult> = reco.recognizeOnceAsync();
-
-
-
-      setOnTaskCompletedListener(task) { result ->
-        Log.i(logTag, "Continuous recognition stopped.");
-
-        var s = result.text;
-
-        if (result.reason != ResultReason.RecognizedIntent) {
-          val errorDetails =
-            if (result.reason == ResultReason.Canceled) CancellationDetails.fromResult(result)
-              .errorDetails else "";
-          s =
-            "Intent failed with " + result.reason + ". Did you enter your Language Understanding subscription?" + System.lineSeparator() + errorDetails;
-        }
-
-        val intentId = result.intentId;
-
-
-        content[0] = s;
-        content[1] = "[intent: $intentId ]";
-
-        invokeMethod("speech.onSpeech", TextUtils.join(System.lineSeparator(), content));
-        println("Stopped");
-      }
-
-
-    } catch (exec: Exception) {
-      //Log.e("SpeechSDKDemo", "unexpected " + exec.message);
-      assert(false);
-      invokeMethod("speech.onException", "Exception: " + exec.message);
     }
   }
 
